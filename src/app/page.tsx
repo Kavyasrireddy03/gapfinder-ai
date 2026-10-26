@@ -1,7 +1,8 @@
 
 "use client";
-import { supabase } from "@/app/lib/supabase";
-import { useState } from "react";
+import { createClient } from "@/app/lib/supabase-auth";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 type Topic = {
   name: string;
@@ -101,6 +102,26 @@ function detectTopics(text: string): string[] {
 }
 
 export default function Home() {
+  const supabase = createClient();
+  const router = useRouter();
+
+useEffect(() => {
+  let mounted = true;
+
+  async function checkAuth() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (mounted && (error || !data.user)) {
+      router.replace("/login");
+    }
+  }
+
+  checkAuth();
+
+  return () => {
+    mounted = false;
+  };
+}, [router]);
   const [active, setActive] = useState("Overview");
   const [topics, setTopics] = useState(initialTopics);
 
@@ -318,25 +339,37 @@ const updatedTopics = topicNames.map((topicName) => {
 
   setTopics(updatedTopics);
   
-void supabase.from("quiz_attempts").insert({
-  score: questions.filter(
-    (question, index) =>
-      answers[index] === question.answer
-  ).length,
-  total_questions: questions.length,
-  answers: answers.map((answer, index) => ({
-    question: questions[index]?.question,
-    selectedAnswer: answer,
-    correctAnswer: questions[index]?.answer,
-    topic: questions[index]?.topic,
-  })),
-}).then(({ error }) => {
+
+void (async () => {
+  const { data: authData, error: authError } =
+    await supabase.auth.getUser();
+
+  if (authError || !authData.user) {
+    console.error("Cannot save quiz: user is not signed in.");
+    return;
+  }
+
+  const { error } = await supabase.from("quiz_attempts").insert({
+    user_id: authData.user.id,
+    score: questions.filter(
+      (question, index) => answers[index] === question.answer
+    ).length,
+    total_questions: questions.length,
+    answers: answers.map((answer, index) => ({
+      question: questions[index]?.question,
+      selectedAnswer: answer,
+      correctAnswer: questions[index]?.answer,
+      topic: questions[index]?.topic,
+    })),
+  });
+
   if (error) {
     console.error("Could not save quiz result:", error.message);
   } else {
     console.log("Quiz result saved successfully");
   }
-});
+})();
+
 
   setCompleted(true);
 }
